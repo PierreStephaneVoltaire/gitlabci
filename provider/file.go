@@ -6,10 +6,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"gopkg.in/yaml.v3"
 	"os"
-	"strings"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -25,7 +23,7 @@ type Yaml struct {
 	Stages []string `yaml:"stages,flow"`
 }
 type CiConf struct {
-	Stages []string `tfsdk:"stages"`
+	Stages []types.String `tfsdk:"stages"`
 }
 
 // FileDataSource is the data source implementation.
@@ -90,9 +88,11 @@ func (d *FileDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		)
 		return
 	}
+	// save state
 	state := CiConf{}
-	state.Stages = append(y.Stages)
-	tflog.Info(ctx, strings.Join(state.Stages, " "))
+	for _, stage := range y.Stages {
+		state.Stages = append(state.Stages, types.StringValue(stage))
+	}
 	diags := resp.State.Set(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
