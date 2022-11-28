@@ -16,14 +16,11 @@ var (
 )
 
 type fileDataSourceModel struct {
-	FileLocation types.String `tfsdk:"file_location"`
-	Id           types.String `tfsdk:"id"`
+	FileLocation types.String   `tfsdk:"file_location"`
+	Stages       []types.String `tfsdk:"stages"`
 }
 type Yaml struct {
 	Stages []string `yaml:"stages,flow"`
-}
-type CiConf struct {
-	Stages []types.String `tfsdk:"stages"`
 }
 
 // FileDataSource is the data source implementation.
@@ -51,9 +48,9 @@ func (d *FileDataSource) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagno
 				Optional:            true,
 				Type:                types.StringType,
 			},
-			"id": {
-				MarkdownDescription: "identifier",
-				Type:                types.StringType,
+			"stages": {
+				MarkdownDescription: "The names and order of the pipeline stages",
+				Type:                types.ListType{ElemType: types.StringType},
 				Computed:            true,
 			},
 		},
@@ -89,7 +86,7 @@ func (d *FileDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 	// save state
-	state := CiConf{}
+	state := fileDataSourceModel{FileLocation: data.FileLocation}
 	for _, stage := range y.Stages {
 		state.Stages = append(state.Stages, types.StringValue(stage))
 	}
