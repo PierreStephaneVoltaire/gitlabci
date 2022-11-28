@@ -6,10 +6,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"gopkg.in/yaml.v3"
-	"io"
 	"os"
-	"strconv"
+	"strings"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -23,6 +23,9 @@ type fileDataSourceModel struct {
 }
 type Yaml struct {
 	Stages []string `yaml:"stages,flow"`
+}
+type CiConf struct {
+	Stages []string `tfsdk:"stages"`
 }
 
 // FileDataSource is the data source implementation.
@@ -67,35 +70,16 @@ func (d *FileDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	//read the file
-	maxSz, _ := strconv.Atoi("10")
-	file, err := os.Open(data.FileLocation.ValueString())
+
+	file, err := os.ReadFile(data.FileLocation.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Could not open the file",
+			"Could not read the file",
 			err.Error(),
 		)
 		return
 	}
-	defer file.Close()
-	b := make([]byte, maxSz)
-	fileContent := ""
-	for {
-		// read content to buffer
-		readTotal, err := file.Read(b)
-		if err != nil {
-			if err != io.EOF {
-				resp.Diagnostics.AddError(
-					"Could not read the file",
-					err.Error(),
-				)
-				return
-			}
-			break
-		}
-
-		fileContent = string(b[:readTotal])
-	}
+	fileContent := string(file)
 	// parse the file
 	y := Yaml{}
 	err = yaml.Unmarshal([]byte(fileContent), &y)
@@ -106,7 +90,10 @@ func (d *FileDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		)
 		return
 	}
-	diags := resp.State.Set(ctx, &y)
+	state := CiConf{}
+	state.Stages = append(y.Stages)
+	tflog.Info(ctx, strings.Join(state.Stages, " "))
+	diags := resp.State.Set(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
