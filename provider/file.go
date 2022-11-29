@@ -2,10 +2,12 @@ package gitlabci
 
 import (
 	"context"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"gitlabci/helpers"
 	"gopkg.in/yaml.v3"
 	"os"
 )
@@ -15,12 +17,20 @@ var (
 	_ datasource.DataSource = &FileDataSource{}
 )
 
-type fileDataSourceModel struct {
-	FileLocation types.String   `tfsdk:"file_location"`
-	Stages       []types.String `tfsdk:"stages"`
-}
-type Yaml struct {
-	Stages []string `yaml:"stages,flow"`
+var defaultStateType = types.ObjectType{
+	AttrTypes: map[string]attr.Type{
+		"image":         types.StringType,
+		"timeout":       types.StringType,
+		"tags":          types.ListType{ElemType: types.StringType},
+		"retry":         types.Int64Type,
+		"interruptible": types.BoolType,
+		"before_script": types.ListType{ElemType: types.StringType},
+		"after_script":  types.ListType{ElemType: types.StringType},
+		"cache":         types.ObjectType{AttrTypes: cacheStateType},
+	}}
+var cacheStateType = map[string]attr.Type{
+	"key":   types.StringType,
+	"paths": types.ListType{ElemType: types.StringType},
 }
 
 // FileDataSource is the data source implementation.
@@ -53,6 +63,11 @@ func (d *FileDataSource) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagno
 				Type:                types.ListType{ElemType: types.StringType},
 				Computed:            true,
 			},
+			"default": {
+				Computed: true,
+				Optional: true,
+				Type:     &defaultStateType,
+			},
 		},
 	}, nil
 }
@@ -60,12 +75,11 @@ func (d *FileDataSource) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagno
 // Read refreshes the Terraform state with the latest data.
 func (d *FileDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	// get value from schema
-	var data fileDataSourceModel
+	var data schema.FileDataSourceModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	file, err := os.ReadFile(data.FileLocation.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -76,7 +90,7 @@ func (d *FileDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	}
 	fileContent := string(file)
 	// parse the file
-	y := Yaml{}
+	y := schema.Yaml{}
 	err = yaml.Unmarshal([]byte(fileContent), &y)
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -86,13 +100,35 @@ func (d *FileDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 	// save state
-	state := fileDataSourceModel{FileLocation: data.FileLocation}
-	for _, stage := range y.Stages {
-		state.Stages = append(state.Stages, types.StringValue(stage))
-	}
+	state := ConvertYamlToState(ctx, data.FileLocation, y)
 	diags := resp.State.Set(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+}
+
+func ConvertYamlToState(ctx context.Context, fileLocation types.String, y schema.Yaml) schema.FileDataSourceModel {
+	tags, _ := types.ListValueFrom(ctx, types.StringType, y.Default.Tags)
+	beforeScript, _ := types.ListValueFrom(ctx, types.StringType, y.Default.BeforeScript)
+	afterScipt, _ := types.ListValueFrom(ctx, types.StringType, y.Default.AfterScript)
+	paths, _ := types.ListValueFrom(ctx, types.StringType, y.Default.Cache.Paths)
+	cache, _ := types.ObjectValue(cacheStateType, map[string]attr.Value{"key": types.StringValue(y.Default.Cache.Key), "paths": paths})
+	v := map[string]attr.Value{
+		"image":         types.StringValue(y.Default.Image),
+		"timeout":       types.StringValue(y.Default.Timeout),
+		"tags":          tags,
+		"retry":         types.Int64Value(y.Default.Retry),
+		"interruptible": types.BoolValue(y.Default.Interruptible),
+		"before_script": beforeScript,
+		"after_script":  afterScipt,
+		"cache":         cache,
+	}
+	defaultobj, _ := types.ObjectValue(defaultStateType.AttrTypes, v)
+
+	state := schema.FileDataSourceModel{FileLocation: fileLocation, Default: defaultobj}
+	for _, stage := range y.Stages {
+		state.Stages = append(state.Stages, types.StringValue(stage))
+	}
+	return state
 }

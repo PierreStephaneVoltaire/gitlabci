@@ -9,5 +9,5 @@ terraform {
 provider "gitlabci" {}
 
 data "gitlabci_file" "example" {
-  file_location="gitlab-ci.yaml"
+  file_location = "gitlab-ci.yaml"
 }

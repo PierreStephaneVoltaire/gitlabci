@@ -2,3 +2,39 @@ stages:
   - test
   - build
   - deploy
+default:
+  image: ruby:3.0
+  timeout: 3 hours 30 minutes
+  tags:
+    - ruby
+    - postgres
+  services:
+    - name: my-postgres:11.7
+      alias: db-postgres
+      entrypoint: [ "/usr/local/bin/db-postgres" ]
+      command: [ "start" ]
+  retry: 2
+  interruptible: true
+  cache:
+    key: binaries-cache
+    paths:
+      - binaries/*.apk
+      - .config
+  before_script:
+    - echo "Execute this command before any 'script:' commands."
+  after_script:
+    - echo "Execute this command after the `script` section completes."
+  artifacts:
+    untracked: true
+    when: on_failure
+    public: false
+    name: "job1-artifacts-file"
+    paths:
+      - binaries/
+      - .config
+    exclude:
+      - binaries/**/*.o
+    expire_in: 1 week
+    expose_as: 'artifact 1'
+job1:
+  script: "execute-script-for-job1"
